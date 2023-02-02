@@ -298,6 +298,12 @@ def displayStats(my_ingredients, dct_bndrinks, dct_canmake):
     # Display the total drinks acquired in the bnd database
     print('{:>15}: {}'.format('Total Drinks', len(dct_bndrinks)))
 
+def displayConversions():
+    """Display general conversions to ounces"""
+    conversions = [ ('1 tbsp', '1/2 oz'), ('1 tsp', '1/6 oz'), ('1 ml', '1/30 oz') ]
+    for cons in conversions:
+        print('{:>10} = {:>7}'.format(cons[0], cons[1]))
+
 def main():
     global dct_bndrinks
     global dct_canmake
@@ -369,7 +375,11 @@ def main():
     parser.add_argument("--recipe",
                         default=False,
                         action='store_true',
-                        help="Display recipes of the search results. Download if missing except when using --all")   
+                        help="Display recipes of the search results. Download if missing except when using --all")
+    parser.add_argument("--conversions", "-c",
+                        default=False,
+                        action='store_true',
+                        help="Display conversions to ounces")
     args = parser.parse_args()
 
     # Load DB from file
@@ -518,7 +528,11 @@ def main():
     # Display the stats
     if args.stats:
         displayStats(my_ingredients, dct_bndrinks, dct_canmake)
-        
+
+    # Display general conversions
+    if args.conversions:
+        displayConversions()
+
     # List drinks we're able to make
     if len(sys.argv) == 1:
         displayAvailableDrinks(dct_canmake)
