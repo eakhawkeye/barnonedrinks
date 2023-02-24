@@ -129,8 +129,8 @@ def importIngredients(import_file, shelf_db):
 
 def isHere(term, obj, strict=False, reverse_search=False):
     """Is the term in the object?"""
+    # Normalize then use set() to dedupe and be efficient in searching
     term = unidecode(term).lower()
-    # Use set() to dedupe and be effecient in searching
     if isinstance(obj, str):
         content = set([ unidecode(obj).lower() ])
     elif isinstance(obj, list) or isinstance(obj, set):
@@ -138,16 +138,17 @@ def isHere(term, obj, strict=False, reverse_search=False):
     else:
         print('Cannot process object passsed to isHere for type {}'.format(type(obj)))
         sys.exit(1)
-    # Search re, accepts user regex
-    # |- Check if the term matches any items in the object
-    # |- term("raspberry liqueur") ~= conent("chambord raspberry liqueur")
+    # Search if the term matches any items in the object
+    # |- strict:  term("raspberry liqueur") == c("raspberry liqueur")
+    # |- loose:   term("raspberry liqueur") ~= c("chambord raspberry liqueur")
+    # |- reverse: term("chambord raspberry liqueur") ~= c("raspberry liqueur")
     for c in content:
         if term == c:
             return True
         if not strict and term in c:
             return True
         if (reverse_search and 
-            len(c.split()) > 1 and 
+            len(c.split()) > 1 and
             c in term):
             return True
     return False
