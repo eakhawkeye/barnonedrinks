@@ -26,6 +26,7 @@ dct_bndrinks = {}
 dct_canmake = {}
 dct_recipes = {}
 my_ingredients = []
+bnd_ingredients = []
 
 
 class Shelver:
@@ -42,15 +43,16 @@ class Shelver:
 def scrapePage(url, user_agent):
     """Scrape the BND website and return the results in a dictionary"""
     global dct_bndrinks
+    is_base = 'by_ingredient/'
     response = requests.get(url, headers={'User-Agent': user_agent})
     if response.status_code == 200:
         print('\t{}'.format(url))
         soup = BeautifulSoup(response.text, 'html.parser')
-        if url.endswith('by_ingredient/'):
+        if url.endswith(is_base):
             div = soup.find_all('div', {'class': 'bnd-c-nav'})[0]
         else:
             div = soup.find_all('div', {'class': 'bnd-c-text-sect'})[0]
-        # if div finds a list of drinks else continue digging
+        # if div finds a list of drinks parse and store...
         dt_tags = div.find_all('dt')
         if dt_tags:
             for i in range(len(dt_tags)):
@@ -68,10 +70,11 @@ def scrapePage(url, user_agent):
                         'url': barnone_url_drinks + drink_link 
                     }
                 })
+        # else continue crawling              
         else:
             links = div.find_all('a')
             for link in links:
-                time.sleep(random.randint(1, 3))
+                #time.sleep(random.randint(1, 3))
                 scrapePage(url + link.get('href'), user_agent)
 
 def buildDictionaryOfDrinks(url, user_agent, shelf_db):
@@ -85,6 +88,17 @@ def buildDictionaryOfDrinks(url, user_agent, shelf_db):
     shelf_db.write('dct_bndrinks', dct_bndrinks)
     print('\tDatabase built!')
 
+def buildDictionaryOfIngredients(dct_bndrinks, shelf_db):
+    """Build the list of complete ingredients"""
+    global bnd_ingredients
+    build_ingredients = set()
+    print('Building list of complete BND ingredients...')
+    for drink in dct_bndrinks.keys():
+        build_ingredients.update(dct_bndrinks[drink]['ingredients'])
+    build_ingredients = sorted(list(build_ingredients))
+    shelf_db.write('bnd_ingredients', build_ingredients)
+    print('\tList built')
+
 def buildDictionaryOfCanMakeDrinks(dct_bndrinks, my_ingredients, shelf_db):
     """Build the dictionary of can make drinks"""
     print('Building dictionary of can make drinks...')
@@ -96,7 +110,8 @@ def buildDictionaryOfCanMakeDrinks(dct_bndrinks, my_ingredients, shelf_db):
         d_t = dct_bndrinks[drink]['type']
         d_u = dct_bndrinks[drink]['url']
         for i in d_i:
-            if not isHere(unidecode(i).lower(), hash_my_ingredients):
+            is_strict = False if len(i) > 1 else True
+            if not isHere(i, hash_my_ingredients, is_strict, True):
                 match = False
                 break
         if match:
@@ -111,6 +126,31 @@ def importIngredients(import_file, shelf_db):
         for line in f:
             my_ingredients.append(line.strip())
     shelf_db.write('my_ingredients', my_ingredients)
+
+def isHere(term, obj, strict=False, reverse_search=False):
+    """Is the term in the object?"""
+    term = unidecode(term).lower()
+    # Use set() to dedupe and be effecient in searching
+    if isinstance(obj, str):
+        content = set([ unidecode(obj).lower() ])
+    elif isinstance(obj, list) or isinstance(obj, set):
+        content = set([ unidecode(o).lower() for o in obj ])
+    else:
+        print('Cannot process object passsed to isHere for type {}'.format(type(obj)))
+        sys.exit(1)
+    # Search re, accepts user regex
+    # |- Check if the term matches any items in the object
+    # |- term("raspberry liqueur") ~= conent("chambord raspberry liqueur")
+    for c in content:
+        if term == c:
+            return True
+        if not strict and term in c:
+            return True
+        if (reverse_search and 
+            len(c.split()) > 1 and 
+            c in term):
+            return True
+    return False
 
 def searchGeneral(search_terms, dct_search, dct_recipes):
     """Search everything for term matches."""
@@ -175,26 +215,6 @@ def searchAggregate(dct_general_m, dct_name_m, dct_ingredient_m, dct_type_m, dct
         dct_matches[name] = list(set(dct_matches[name]))
     return dct_matches
 
-def isHere(term, obj):
-    """Is the term in the object?"""
-    term = unidecode(term).lower()
-    match = False
-    # Use sets to dedupe and effeciency in searching
-    if isinstance(obj, str):
-        content = set([ unidecode(obj).lower() ])
-    elif isinstance(obj, list):
-        content = set([ unidecode(o).lower() for o in obj ])
-    elif isinstance(obj, set):
-        content = obj
-    else:
-        print('Cannot process object passsed to isHere for type {}'.format(type(obj)))
-        sys.exit(1)
-    # Search re, accepts user regex
-    r = re.compile(".*%s$" % (term))
-    if list(filter(r.match, content)):
-        match = True
-    return match
-
 def prepareRecipes(dct_matches, dct_bndrinks, dct_recipes, search_terms, get_all=False):
     """Download and build list of recipe instructions"""
     if not dct_recipes:
@@ -244,7 +264,7 @@ def displayAvailableDrinks(dct):
         d_t = dct[name]['type']
         print("{} ({}): {}".format(name, d_t, d_i))
             
-def displayResults(dct_search, search_terms=None, dct_matches=None, show_recipes=False, dct_rcp={}):
+def displayResults(dct_search, search_terms=[], dct_matches={}, show_recipes=False, dct_rcp={}):
     """Display search results"""
     sorted_matches = sorted(dct_matches.items(), key=lambda x: len(x[1]), reverse=True)
     search_count = len(search_terms)
@@ -252,10 +272,14 @@ def displayResults(dct_search, search_terms=None, dct_matches=None, show_recipes
     for name, matches in sorted_matches:
         # Only display exact search term matches
         if search_count == len(matches):
-            results_count += 1
-            d_i = ', '.join(dct_search[name]['ingredients'])
+            # dct_recipes can include unmakeable drinks based on my_ingredients changes
+            try:
+                d_i = ', '.join(dct_search[name]['ingredients'])
+            except KeyError:
+                continue
             d_t = dct_search[name]['type']
             d_u = dct_search[name]['url']
+            results_count += 1
             # Format different if displaying recipes
             if show_recipes:
                 d_p = dct_rcp[name]['portions']
@@ -276,7 +300,7 @@ def displayResults(dct_search, search_terms=None, dct_matches=None, show_recipes
                 print("\t{}".format(d_u))
     print("\nResults: {}".format(results_count))
 
-def displayStats(my_ingredients, dct_bndrinks, dct_canmake):
+def displayStats(my_ingredients, dct_bndrinks, dct_canmake, bnd_ingredients):
     """Display statistics"""
     type_counts = {}
     # Count the types of drinks we're able to make and sort
@@ -300,14 +324,26 @@ def displayStats(my_ingredients, dct_bndrinks, dct_canmake):
 
 def displayConversions():
     """Display general conversions to ounces"""
-    conversions = [ ('1 tbsp', '1/2 oz'), ('1 tsp', '1/6 oz'), ('1 ml', '1/30 oz') ]
+    conversions = [ 
+                   ('1 cup', '25/3 oz'),
+                   ('1 shot', '3/2 oz'),
+                   ('1 tbsp', '1/2 oz'), 
+                   ('1 tsp', '1/6 oz'), 
+                   ('1 ml', '1/30 oz') ]
     for cons in conversions:
         print('{:>10} = {:>7}'.format(cons[0], cons[1]))
+
+def displayIngredientAlts(dct_ingredient_alts):
+    """Display ingredient alternatives"""
+    for my, bnds  in dct_ingredient_alts.items():
+        print('{}:'.format(my))
+        [ print('\t{}.format(i)') for i in bnds ]
 
 def main():
     global dct_bndrinks
     global dct_canmake
     global my_ingredients
+    global bnd_ingredients
     global dct_recipes
     dct_type_m = {}
     dct_drink_m = {}
@@ -349,7 +385,7 @@ def main():
     parser.add_argument("--instructions", "-r",
                         default=[],
                         nargs='+',
-                        help="search by instructions (recipes))")
+                        help="search by instructions (recipes)")
     parser.add_argument("--types", "-t",
                         default=[],
                         nargs='+',
@@ -372,7 +408,7 @@ def main():
                         default=None,
                         required=False,
                         help="Import ingredients from a file, line separated")
-    parser.add_argument("--recipe",
+    parser.add_argument("--recipes",
                         default=False,
                         action='store_true',
                         help="Display recipes of the search results. Download if missing except when using --all")
@@ -380,6 +416,10 @@ def main():
                         default=False,
                         action='store_true',
                         help="Display conversions to ounces")
+    parser.add_argument("--ingredientalts",
+                        default=False,
+                        action='store_true',
+                        help="Display all related (alt) ingredients")
     args = parser.parse_args()
 
     # Load DB from file
@@ -389,6 +429,7 @@ def main():
         dct_canmake = shelf_db.read('dct_canmake')
         my_ingredients = shelf_db.read('my_ingredients')
         dct_recipes = shelf_db.read('dct_recipes')
+        bnd_ingredients = shelf_db.read('bnd_ingredients')
     except:
         pass
 
@@ -411,7 +452,7 @@ def main():
     # Add ingredients to my_ingredients
     if args.add:
         for i in args.add:
-            i = i.translate(str.maketrans('', '', string.punctuation)).title()
+            i = i.translate(str.maketrans('', '', string.punctuation)).strip().title()
             try:
                 my_ingredients.append(i)
             except AttributeError:
@@ -459,6 +500,9 @@ def main():
         buildDictionaryOfDrinks(barnone_url_ingredients, user_agent, shelf_db)
         dct_bndrinks = shelf_db.read('dct_bndrinks')
         print('\tScrape complete!')
+        # Build the list of BND ingredients
+        buildDictionaryOfIngredients(dct_bndrinks, shelf_db)
+        bnd_ingredients = shelf_db.read('bnd_ingredients')
         # Build the dictionary of can make drinks
         buildDictionaryOfCanMakeDrinks(dct_bndrinks, my_ingredients, shelf_db)
         dct_canmake = shelf_db.read('dct_canmake')
@@ -471,7 +515,7 @@ def main():
         dct_canmake = shelf_db.read('dct_canmake')
 
     # Download all the recipes for dct_canmake
-    if len(sys.argv) == 2 and args.recipe:
+    if len(sys.argv) == 2 and args.recipes:
         print('Downloading all the recipes for drinks you can make...')
         # Build the dictionary of recipes
         prepareRecipes(dct_canmake, dct_bndrinks, dct_recipes, [], True)
@@ -518,16 +562,16 @@ def main():
                                       dct_type_m,
                                       dct_recipe_m)
         # If we're displaying recipes...
-        if args.recipe:
+        if args.recipes:
             # Ensure that we have the recipes in our recipes DB
             dct_recipes = prepareRecipes(dct_matches, dct_bndrinks, dct_recipes, all_search_terms)
             shelf_db.write('dct_recipes', dct_recipes)
             dct_recipes = shelf_db.read('dct_recipes')
-        displayResults(dct_search, all_search_terms, dct_matches, args.recipe, dct_recipes)
+        displayResults(dct_search, all_search_terms, dct_matches, args.recipes, dct_recipes)
 
     # Display the stats
     if args.stats:
-        displayStats(my_ingredients, dct_bndrinks, dct_canmake)
+        displayStats(my_ingredients, dct_bndrinks, dct_canmake, bnd_ingredients)
 
     # Display general conversions
     if args.conversions:
