@@ -532,7 +532,7 @@ def main():
     if len(sys.argv) == 2 and args.recipes:
         print('Downloading all the recipes for drinks you can make...')
         # Build the dictionary of recipes
-        prepareRecipes(dct_canmake, dct_bndrinks, dct_recipes, [], True)
+        dct_recipes = prepareRecipes(dct_canmake, dct_bndrinks, dct_recipes, [], True)
         shelf_db.write('dct_recipes', dct_recipes)
 
     # Define the search dictionary (either dct_canmake or dct_bndrinks)
