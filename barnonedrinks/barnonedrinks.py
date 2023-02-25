@@ -40,6 +40,15 @@ class Shelver:
         with shelve.open(self.shelve_file, 'r') as db:
             return db.get(key)
 
+def importIngredients(import_file, shelf_db):
+    """Import ingredients from file"""
+    print('Importing ingredients from file...')
+    my_ingredients = []
+    with open(import_file, 'r') as f:
+        for line in f:
+            my_ingredients.append(line.strip())
+    shelf_db.write('my_ingredients', my_ingredients)
+
 def scrapePage(url, user_agent):
     """Scrape the BND website and return the results in a dictionary"""
     global dct_bndrinks
@@ -76,6 +85,61 @@ def scrapePage(url, user_agent):
             for link in links:
                 #time.sleep(random.randint(1, 3))
                 scrapePage(url + link.get('href'), user_agent)
+
+def prepareRecipes(dct_matches, dct_bndrinks, dct_recipes, search_terms, get_all=False):
+    """Download and build list of recipe instructions"""
+    if not dct_recipes:
+        dct_recipes = {}
+    search_count = len(search_terms)
+    for name in dct_matches.keys():
+        # Only process exact matches or everything if requested
+        if not search_count == len(dct_matches[name]) and not get_all:
+            continue
+        # Download the recipe
+        if not name in dct_recipes.keys():
+            print("Downloading Recipe for {}".format(name))
+            dct_recipes[name] = copy.deepcopy(dct_bndrinks[name])
+            response = requests.get(dct_recipes[name]['url'], headers={'User-Agent': user_agent})
+            if response.status_code == 200:
+                # <ul class="bningredients">
+                # <li>1 1/2 oz. <a href="../by_ingredient/p/passion-fruit-syrup-672.html">Passion Fruit Syrup</a> </li>
+                # <li><a href="../by_ingredient/o/orange-juice-73.html">Orange Juice</a> (Fresh)</li>
+                # </ul>           <h2 class="bndrinksect">Instructions</h2>
+                # <div class="bnd-c-text-sect" >...text stuff...</div>
+                soup = BeautifulSoup(response.text, 'html.parser')
+                portions = []
+                div_portions = soup.find_all('ul', {'class': 'bningredients'})
+                # iterate through each item of the list <ul..>
+                for l in div_portions[0].find_all('li'):
+                    # get the list item's link's _text_ (<a..>_text_</a>)
+                    l_ingredient = l.find_all('a')[0].text.strip()
+                    # Dedupe, clean input, and remove empty elements
+                    l_rawtexts = re.split(l_ingredient, l.text)
+                    l_texts = list(filter(None, [ e.strip() for e in l_rawtexts ]))
+                    # Split the list item depending on the remining elements
+                    if len(l_texts) == 0:
+                        l_portion = '.'
+                    elif len(l_texts) == 1:
+                        if not l_texts[0][0].isdigit():
+                            l_portion = '.'
+                            l_ingredient = l_texts[0]
+                        else:
+                            l_portion = l_texts[0]
+                    else:
+                        if not l_texts[0][0].isdigit():
+                            l_portion = '.'
+                            l_ingredient = '%s - %s' % (l_texts[0], l_texts[1])
+                        else:
+                            l_portion = l_texts[0]
+                            l_ingredient += '(%s)' % (l_texts[1])
+                    # build the list of portion tuples
+                    portions.append((l_portion, l_ingredient))
+                dct_recipes[name]['portions'] = portions                
+                div_instructions = soup.find_all('div', {'class': 'bnd-c-text-sect'})[0]
+                dct_recipes[name]['instructions'] = unidecode(div_instructions.text)
+            else:
+                print("Error downloading recipe {}".format(name))
+    return dct_recipes
 
 def buildDictionaryOfDrinks(url, user_agent, shelf_db):
     """Build the dictionary of drinks"""
@@ -117,15 +181,6 @@ def buildDictionaryOfCanMakeDrinks(dct_bndrinks, my_ingredients, shelf_db):
         if match:
             dct_canmake[drink] = {'ingredients': d_i, 'url': d_u, 'type': d_t}
     shelf_db.write('dct_canmake', dct_canmake)
-
-def importIngredients(import_file, shelf_db):
-    """Import ingredients from file"""
-    print('Importing ingredients from file...')
-    my_ingredients = []
-    with open(import_file, 'r') as f:
-        for line in f:
-            my_ingredients.append(line.strip())
-    shelf_db.write('my_ingredients', my_ingredients)
 
 def isHere(term, obj, strict=False, reverse_search=False):
     """Is the term in the object?"""
@@ -215,48 +270,6 @@ def searchAggregate(dct_general_m, dct_name_m, dct_ingredient_m, dct_type_m, dct
     for name in dct_matches.keys():
         dct_matches[name] = list(set(dct_matches[name]))
     return dct_matches
-
-def prepareRecipes(dct_matches, dct_bndrinks, dct_recipes, search_terms, get_all=False):
-    """Download and build list of recipe instructions"""
-    if not dct_recipes:
-        dct_recipes = {}
-    search_count = len(search_terms)
-    for name in dct_matches.keys():
-        # Only process exact matches or everything if requested
-        if not search_count == len(dct_matches[name]) and not get_all:
-            continue
-        # Download the recipe
-        if not name in dct_recipes.keys():
-            print("Downloading Recipe for {}".format(name))
-            dct_recipes[name] = copy.deepcopy(dct_bndrinks[name])
-            response = requests.get(dct_recipes[name]['url'], headers={'User-Agent': user_agent})
-            if response.status_code == 200:
-                # <ul class="bningredients">
-                # <li>1 1/2 oz. <a href="../by_ingredient/p/passion-fruit-syrup-672.html">Passion Fruit Syrup</a> </li>
-                # <li><a href="../by_ingredient/o/orange-juice-73.html">Orange Juice</a> (Fresh)</li>
-                # </ul>           <h2 class="bndrinksect">Instructions</h2>
-                # <div class="bnd-c-text-sect" >...text stuff...</div>
-                soup = BeautifulSoup(response.text, 'html.parser')
-                portions = []
-                div_portions = soup.find_all('ul', {'class': 'bningredients'})
-                # iterate through each item of the list <ul..>
-                for l in div_portions[0].find_all('li'):
-                    # get the list item's link's _text_ (<a..>_text_</a>)
-                    l_ingredient = l.find_all('a')[0].text.strip()
-                    # remove the link's text from the item's text (dedupe)
-                    l_portion = re.sub(l_ingredient, '', l.text).strip()
-                    # remove any instance of paratheses i.e. (fresh)
-                    l_portion = re.sub("\(.*\)", '', l_portion).strip()
-                    # if there are no portions then use a placeholder
-                    l_portion = '.' if not l_portion else l_portion
-                    # build the list of portion tuples
-                    portions.append((l_portion, l_ingredient))
-                dct_recipes[name]['portions'] = portions                
-                div_instructions = soup.find_all('div', {'class': 'bnd-c-text-sect'})[0]
-                dct_recipes[name]['instructions'] = unidecode(div_instructions.text)
-            else:
-                print("Error downloading recipe {}".format(name))
-    return dct_recipes
 
 def displayAvailableDrinks(dct):
     """Display available drinks"""
