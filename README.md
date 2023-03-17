@@ -11,10 +11,6 @@ usage: barnonedrinks.py [-h] [--all] [--list] [--add ADD [ADD ...]] [--remove RE
                         [--rebuild] [--importingredients IMPORTINGREDIENTS] [--recipes] [--conversions] [--ingredientalts]
                         [types | unique name ...]
 
-positional arguments:
-  type(s) | unique name
-                        type(s) or name of pokemon, space separated
-
 options:
   -h, --help            show this help message and exit
   --all                 output all relevant drinks (default: only what you can make)
