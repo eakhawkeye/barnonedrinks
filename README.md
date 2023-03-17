@@ -11,6 +11,9 @@ usage: barnonedrinks.py [-h] [--all] [--list] [--add ADD [ADD ...]] [--remove RE
                         [--rebuild] [--importingredients IMPORTINGREDIENTS] [--recipes] [--conversions] [--ingredientalts]
                         [types | unique name ...]
 
+positional arguments:
+  general search terms  general search of term in any category of search
+
 options:
   -h, --help            show this help message and exit
   --all                 output all relevant drinks (default: only what you can make)
