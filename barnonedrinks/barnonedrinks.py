@@ -120,7 +120,7 @@ def prepareRecipes(dct_matches, dct_bndrinks, dct_recipes, search_terms, get_all
                     if len(l_texts) == 0:
                         l_portion = '.'
                     elif len(l_texts) == 1:
-                        if not l_texts[0][0].isdigit():
+                        if not l_texts[0][0].isdigit() and not "dash" in l_texts[0]:
                             l_portion = '.'
                             l_ingredient = l_texts[0]
                         else:
@@ -131,7 +131,7 @@ def prepareRecipes(dct_matches, dct_bndrinks, dct_recipes, search_terms, get_all
                             l_ingredient = '%s - %s' % (l_texts[0], l_texts[1])
                         else:
                             l_portion = l_texts[0]
-                            l_ingredient += '(%s)' % (l_texts[1])
+                            l_ingredient += ' (%s)' % (l_texts[1])
                     # build the list of portion tuples
                     portions.append((l_portion, l_ingredient))
                 dct_recipes[name]['portions'] = portions                
@@ -299,7 +299,7 @@ def displayResults(dct_search, search_terms=[], dct_matches={}, show_recipes=Fal
                 d_p = dct_rcp[name]['portions']
                 d_r = dct_rcp[name]['instructions']
                 print("\n{} ({}):".format(name, d_t))
-                [ print("\t  {:.<12}{}".format(p[0], p[1])) for p in d_p ]
+                [ print("\t  {:.<13}{}".format(p[0], p[1])) for p in d_p ]
                 # Output instructions with limited width
                 format_r = re.sub("\s+", ' ', d_r).lstrip()
                 format_r = textwrap.wrap(format_r,
