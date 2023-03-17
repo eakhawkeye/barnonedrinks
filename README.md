@@ -12,7 +12,7 @@ usage: barnonedrinks.py [-h] [--all] [--list] [--add ADD [ADD ...]] [--remove RE
                         [types | unique name ...]
 
 positional arguments:
-  general search terms  general search of term in any category of search
+  general search terms  search through all categories
 
 options:
   -h, --help            show this help message and exit
