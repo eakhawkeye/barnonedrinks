@@ -369,9 +369,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("dynamic",
                         default=None,
-                        metavar='type(s) | unique name', 
+                        metavar='general search terms', 
                         nargs='*',
-                        help='type(s) or name of pokemon, space separated')
+                        help='search through all categories')
     parser.add_argument("--all",
                         default=False,
                         action='store_true',
